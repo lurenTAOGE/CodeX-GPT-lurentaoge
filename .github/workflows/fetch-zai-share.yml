@@ -14,25 +14,75 @@ jobs:
       - name: Fetch public conversation sources
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           mkdir -p out
+          SHARE_ID='8d6d58cc-f6ae-4e24-81bf-c4ff094e1401'
+          BASE='https://chat.z.ai'
+
+          curl --location --silent --show-error --retry 3 \
+            --cookie-jar out/cookies.txt \
+            --header 'Accept: application/json' \
+            "$BASE/api/v1/auths/" \
+            --output out/auth.json
+
+          TOKEN="$(python - <<'PY'
+          import json
+          with open('out/auth.json', encoding='utf-8') as f:
+              data=json.load(f)
+          print(data.get('token') or data.get('user',{}).get('token') or '')
+          PY
+          )"
+
           curl --fail --location --silent --show-error --retry 3 \
             'https://r.jina.ai/http://chat.z.ai/s/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
-            --output out/reader.md
+            --output out/reader.md || true
+
           curl --location --silent --show-error --retry 3 \
-            'https://chat.z.ai/s/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
-            --output out/share.html || true
+            --cookie out/cookies.txt --cookie-jar out/cookies.txt \
+            "$BASE/s/$SHARE_ID" \
+            --output out/share.html
+
           curl --location --silent --show-error --retry 3 \
+            --cookie out/cookies.txt \
             --header 'Accept: application/json' \
-            'https://chat.z.ai/api/v1/chats/share/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
-            --output out/api.json || true
+            --header "Authorization: Bearer $TOKEN" \
+            "$BASE/api/v1/chats/share/$SHARE_ID" \
+            --output out/api.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/api.json')
+          try:
+              d=json.loads(p.read_text(encoding='utf-8'))
+          except Exception:
+              d={}
+          msgs=((d.get('chat') or {}).get('history') or {}).get('messages') or {}
+          Path('out/message_ids.json').write_text(json.dumps(list(msgs), ensure_ascii=False), encoding='utf-8')
+          print('message ids:', len(msgs))
+          PY
+
+          curl --location --silent --show-error --retry 3 \
+            --request POST \
+            --cookie out/cookies.txt \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --header "Authorization: Bearer $TOKEN" \
+            --data-binary @<(python - <<'PY'
+          import json
+          print(json.dumps({'ids': json.load(open('out/message_ids.json'))}))
+          PY
+          ) \
+            "$BASE/api/v1/chats/$SHARE_ID/messages/batch" \
+            --output out/messages.json || true
+
           printf '\nFetched byte counts:\n'
           wc -c out/*
-          test -s out/reader.md
+          test -s out/api.json
       - name: Upload fetched sources
         uses: actions/upload-artifact@v4
         with:
-          name: zai-share-source
+          name: zai-share-source-authenticated
           path: out/
           if-no-files-found: error
           retention-days: 1
