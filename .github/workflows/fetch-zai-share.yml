@@ -1,0 +1,39 @@
+name: Fetch ZAI Share Source
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-zai-share.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch public conversation sources
+        shell: bash
+        run: |
+          set -u
+          mkdir -p out
+          curl --fail --location --silent --show-error --retry 3 \
+            'https://r.jina.ai/http://chat.z.ai/s/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
+            --output out/reader.md
+          curl --location --silent --show-error --retry 3 \
+            'https://chat.z.ai/s/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
+            --output out/share.html || true
+          curl --location --silent --show-error --retry 3 \
+            --header 'Accept: application/json' \
+            'https://chat.z.ai/api/v1/chats/share/8d6d58cc-f6ae-4e24-81bf-c4ff094e1401' \
+            --output out/api.json || true
+          printf '\nFetched byte counts:\n'
+          wc -c out/*
+          test -s out/reader.md
+      - name: Upload fetched sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: zai-share-source
+          path: out/
+          if-no-files-found: error
+          retention-days: 1
