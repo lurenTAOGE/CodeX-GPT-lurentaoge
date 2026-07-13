@@ -11,6 +11,7 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Fetch public conversation sources
         shell: bash
         run: |
@@ -52,11 +53,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('out/api.json')
-          try:
-              d=json.loads(p.read_text(encoding='utf-8'))
-          except Exception:
-              d={}
+          d=json.loads(Path('out/api.json').read_text(encoding='utf-8'))
           msgs=((d.get('chat') or {}).get('history') or {}).get('messages') or {}
           Path('out/message_ids.json').write_text(json.dumps(list(msgs), ensure_ascii=False), encoding='utf-8')
           print('message ids:', len(msgs))
@@ -74,15 +71,33 @@ jobs:
           PY
           ) \
             "$BASE/api/v1/chats/$SHARE_ID/messages/batch" \
-            --output out/messages.json || true
+            --output out/messages.json
 
           printf '\nFetched byte counts:\n'
           wc -c out/*
-          test -s out/api.json
+          test -s out/messages.json
+      - name: Render Mermaid diagrams
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          mkdir -p out/diagrams
+          cat > out/puppeteer-config.json <<'JSON'
+          {"args":["--no-sandbox","--disable-setuid-sandbox"]}
+          JSON
+          for f in .tmp-zai-mermaid/*.mmd; do
+            name="$(basename "$f" .mmd)"
+            npx -y @mermaid-js/mermaid-cli@11.9.0 \
+              -p out/puppeteer-config.json \
+              -i "$f" -o "out/diagrams/${name}.png" \
+              -w 2200 -H 1600 -b white
+          done
+          file out/diagrams/*
       - name: Upload fetched sources
         uses: actions/upload-artifact@v4
         with:
-          name: zai-share-source-authenticated
+          name: zai-share-source-complete
           path: out/
           if-no-files-found: error
           retention-days: 1
