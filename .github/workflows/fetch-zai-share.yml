@@ -1,9 +1,8 @@
 name: Fetch ZAI Share Source
 
 on:
-  push:
-    paths:
-      - '.github/workflows/fetch-zai-share.yml'
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
