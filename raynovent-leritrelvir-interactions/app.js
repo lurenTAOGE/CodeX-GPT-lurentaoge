@@ -1,4 +1,5 @@
-const state={query:'',status:'all',category:'all',section:'all',view:'table',favorites:new Set(JSON.parse(localStorage.getItem('raynovent-favorites')||'[]'))};
+const storage=(()=>{try{const s=window.localStorage,k='__raynovent_storage_test__';s.setItem(k,'1');s.removeItem(k);return s}catch{return{getItem:()=>null,setItem:()=>{},removeItem:()=>{}}}})();
+const state={query:'',status:'all',category:'all',section:'all',view:'table',favorites:new Set(JSON.parse(storage.getItem('raynovent-favorites')||'[]'))};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const normalize=s=>String(s).toLowerCase().replace(/\s+/g,'');
@@ -7,21 +8,105 @@ const statusClass=e=>e.status;
 const statusPill=e=>`<span class="status-pill ${statusClass(e)}">${esc(e.recommendation)}</span>`;
 function highlight(text,q){const raw=String(text),needle=String(q||'').trim();if(!needle)return esc(raw);const lower=raw.toLowerCase(),n=needle.toLowerCase();let pos=0,out='',idx;while((idx=lower.indexOf(n,pos))!==-1){out+=esc(raw.slice(pos,idx))+'<mark>'+esc(raw.slice(idx,idx+needle.length))+'</mark>';pos=idx+needle.length}return out+esc(raw.slice(pos))}
 function withTransition(fn){if(document.startViewTransition&&!document.body.classList.contains('motion-off'))document.startViewTransition(fn);else fn()}
-function populateFilters(){const cats=[...new Set(ENTRIES.map(e=>e.category))].sort((a,b)=>a.localeCompare(b,'zh-CN'));$('#categorySelect').insertAdjacentHTML('beforeend',cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join(''));$('#sectionSelect').insertAdjacentHTML('beforeend',SECTIONS.map((s,i)=>`<option value="${i}">分区 ${i+1}：${esc(s)}</option>`).join(''));$('#quickNav').innerHTML=SECTIONS.map((s,i)=>`<button type="button" data-section-index="${i}">${i+1}. ${esc(s)}</button>`).join('')}
-function matches(e){const q=normalize(state.query);const hay=normalize([e.section,e.category,e.drugs,e.recommendation].join(' '));return(!q||hay.includes(q))&&(state.status==='all'||e.status===state.status)&&(state.category==='all'||e.category===state.category)&&(state.section==='all'||e.section===SECTIONS[Number(state.section)])}
+
+function populateFilters(){
+  const cats=[...new Set(ENTRIES.map(e=>e.category))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+  $('#categorySelect').insertAdjacentHTML('beforeend',cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join(''));
+  $('#sectionSelect').insertAdjacentHTML('beforeend',SECTIONS.map((s,i)=>`<option value="${i}">分区 ${i+1}：${esc(s)}</option>`).join(''));
+  $('#quickNav').innerHTML=SECTIONS.map((s,i)=>`<button type="button" data-section-index="${i}">${i+1}. ${esc(s)}</button>`).join('');
+}
+function matches(e){
+  const q=normalize(state.query);
+  const hay=normalize([e.section,e.category,e.drugs,e.recommendation].join(' '));
+  return (!q||hay.includes(q))&&(state.status==='all'||e.status===state.status)&&(state.category==='all'||e.category===state.category)&&(state.section==='all'||e.section===SECTIONS[Number(state.section)]);
+}
 function filtered(){return ENTRIES.filter(matches)}
-function renderCards(items){const q=state.query;$('#cardView').innerHTML=items.map(e=>`<article class="drug-card" data-id="${e.id}" data-status="${e.status}"><div class="card-top"><span>${statusPill(e)}</span><button class="star-btn ${state.favorites.has(e.id)?'active':''}" type="button" data-fav="${e.id}" aria-label="${state.favorites.has(e.id)?'从':'加入'}临时清单">${state.favorites.has(e.id)?'★':'☆'}</button></div><h3>${highlight(e.category,q)}</h3><p>${highlight(e.drugs,q)}</p><div class="card-actions"><button class="mini-btn" type="button" data-detail="${e.id}">查看详情</button><button class="mini-btn" type="button" data-copy="${e.id}">复制药物清单</button></div></article>`).join('')}
-function renderTable(items){const visible=new Set(items.map(e=>e.source_table_row));const body=$('#sourceTableBody');const rows=[...body.rows];rows.forEach((tr,index)=>{if(index===0){tr.hidden=false;return}const physicalRow=index+1;const sectionCell=tr.querySelector('th[colspan="3"]');if(sectionCell){const sectionText=sectionCell.textContent;tr.hidden=!items.some(e=>e.section===sectionText);return}tr.hidden=!visible.has(physicalRow)});ENTRIES.forEach(e=>{const tr=rows[e.source_table_row-1];if(!tr)return;tr.dataset.entryId=e.id;tr.style.cursor='pointer';tr.title='点击查看详情';const last=[...tr.cells].at(-1);if(last&&!last.dataset.decorated){last.dataset.decorated='1';last.innerHTML=`<span class="status-pill ${e.status}">${esc(last.textContent)}</span>`}})}
-function render(){const items=filtered();renderCards(items);renderTable(items);$('#resultCount').textContent=items.length;$('#emptyState').style.display=items.length?'none':'block';$('#tableView').style.display=state.view==='table'&&items.length?'block':'none';$('#cardView').style.display=state.view==='card'&&items.length?'grid':'none';$('#viewBtn').textContent=state.view==='table'?'▦':'▤';const tags=[];if(state.query)tags.push(`关键词“${state.query}”`);if(state.status!=='all')tags.push($(`[data-status="${state.status}"]`).textContent.replace(/\s+\d+$/,''));if(state.category!=='all')tags.push(state.category);if(state.section!=='all')tags.push(`分区 ${Number(state.section)+1}`);$('#activeSummary').textContent=tags.length?tags.join(' · '):'未启用筛选'}
+function renderCards(items){
+  const q=state.query;
+  $('#cardView').innerHTML=items.map(e=>`<article class="drug-card" data-id="${e.id}" data-status="${e.status}">
+    <div class="card-top"><span>${statusPill(e)}</span><button class="star-btn ${state.favorites.has(e.id)?'active':''}" type="button" data-fav="${e.id}" aria-label="${state.favorites.has(e.id)?'从':'加入'}临时清单">${state.favorites.has(e.id)?'★':'☆'}</button></div>
+    <h3>${highlight(e.category,q)}</h3><p>${highlight(e.drugs,q)}</p>
+    <div class="card-actions"><button class="mini-btn" type="button" data-detail="${e.id}">查看详情</button><button class="mini-btn" type="button" data-copy="${e.id}">复制药物清单</button></div>
+  </article>`).join('');
+}
+function renderTable(items){
+  const visible=new Set(items.map(e=>e.source_table_row));
+  const body=$('#sourceTableBody');
+  const rows=[...body.rows];
+  // The first row is the table header. Section rows are shown only if at least one item in that section remains.
+  rows.forEach((tr,index)=>{
+    if(index===0){tr.hidden=false;return}
+    const physicalRow=index+1;
+    const sectionCell=tr.querySelector('th[colspan="3"]');
+    if(sectionCell){
+      const sectionText=sectionCell.textContent;
+      tr.hidden=!items.some(e=>e.section===sectionText);
+      return;
+    }
+    tr.hidden=!visible.has(physicalRow);
+  });
+  // Add status styling and row details hooks without altering source cell text.
+  ENTRIES.forEach(e=>{
+    const tr=rows[e.source_table_row-1];
+    if(!tr)return;
+    tr.dataset.entryId=e.id;
+    tr.style.cursor='pointer';
+    tr.title='点击查看详情';
+    const last=[...tr.cells].at(-1);
+    if(last&&!last.dataset.decorated){last.dataset.decorated='1';last.innerHTML=`<span class="status-pill ${e.status}">${esc(last.textContent)}</span>`}
+  });
+}
+function render(){
+  const items=filtered();
+  renderCards(items);renderTable(items);
+  $('#resultCount').textContent=items.length;
+  $('#emptyState').style.display=items.length?'none':'block';
+  $('#tableView').style.display=state.view==='table'&&items.length?'block':'none';
+  $('#cardView').style.display=state.view==='card'&&items.length?'grid':'none';
+  $('#viewBtn').textContent=state.view==='table'?'▦':'▤';
+  const tags=[];if(state.query)tags.push(`关键词“${state.query}”`);if(state.status!=='all')tags.push($(`[data-status="${state.status}"]`).textContent.replace(/\s+\d+$/,''));if(state.category!=='all')tags.push(state.category);if(state.section!=='all')tags.push(`分区 ${Number(state.section)+1}`);
+  $('#activeSummary').textContent=tags.length?tags.join(' · '):'未启用筛选';
+}
 function setStatus(status){state.status=status;$$('.filter-chip').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.status===status)));render()}
 function resetAll(){state.query='';state.status='all';state.category='all';state.section='all';$('#searchInput').value='';$('#categorySelect').value='all';$('#sectionSelect').value='all';setStatus('all')}
 function entryById(id){return ENTRIES.find(e=>e.id===id)}
-function openDetail(id){const e=entryById(id);if(!e)return;$('#dialogStatus').innerHTML=statusPill(e);$('#dialogTitle').textContent=e.category;$('#dialogSection').textContent=e.section;$('#dialogRecommendation').textContent=e.recommendation;$('#dialogSourceRow').textContent=`源表第 ${e.source_table_row} 行（含表头与分区行）`;$('#dialogDrugs').innerHTML=splitDrugs(e.drugs).map(d=>`<button class="drug-chip" type="button" data-copy-name="${esc(d)}">${esc(d)}</button>`).join('');$('#detailDialog').showModal()}
+function openDetail(id){
+  const e=entryById(id);if(!e)return;
+  $('#dialogStatus').innerHTML=statusPill(e);$('#dialogTitle').textContent=e.category;$('#dialogSection').textContent=e.section;$('#dialogRecommendation').textContent=e.recommendation;$('#dialogSourceRow').textContent=`源表第 ${e.source_table_row} 行（含表头与分区行）`;
+  $('#dialogDrugs').innerHTML=splitDrugs(e.drugs).map(d=>`<button class="drug-chip" type="button" data-copy-name="${esc(d)}">${esc(d)}</button>`).join('');
+  $('#detailDialog').showModal();
+}
 async function copyText(text,button){try{await navigator.clipboard.writeText(text);const old=button.textContent;button.textContent='已复制';setTimeout(()=>button.textContent=old,900)}catch{prompt('请复制以下内容：',text)}}
-function toggleFav(id){state.favorites.has(id)?state.favorites.delete(id):state.favorites.add(id);localStorage.setItem('raynovent-favorites',JSON.stringify([...state.favorites]));render();renderTray()}
-function renderTray(){const items=[...state.favorites].map(entryById).filter(Boolean);$('#trayCount').textContent=items.length;$('#trayList').innerHTML=items.length?items.map(e=>`<div class="tray-item"><span><b>${esc(e.category)}</b><small>${esc(e.status_label)} · ${esc(e.drugs)}</small></span><button class="tray-remove" type="button" data-remove="${e.id}" aria-label="移除">×</button></div>`).join(''):'<div class="empty" style="display:block;padding:24px">尚未添加项目。卡片右上角的星标可加入清单。</div>'}
+function toggleFav(id){state.favorites.has(id)?state.favorites.delete(id):state.favorites.add(id);storage.setItem('raynovent-favorites',JSON.stringify([...state.favorites]));render();renderTray()}
+function renderTray(){
+  const items=[...state.favorites].map(entryById).filter(Boolean);$('#trayCount').textContent=items.length;
+  $('#trayList').innerHTML=items.length?items.map(e=>`<div class="tray-item"><span><b>${esc(e.category)}</b><small>${esc(e.status_label)} · ${esc(e.drugs)}</small></span><button class="tray-remove" type="button" data-remove="${e.id}" aria-label="移除">×</button></div>`).join(''):'<div class="empty" style="display:block;padding:24px">尚未添加项目。卡片右上角的星标可加入清单。</div>';
+}
 function toggleTray(){const open=$('#tray').classList.toggle('open');$('#trayHead').setAttribute('aria-expanded',String(open));$('#trayArrow').textContent=open?'⌄':'⌃'}
+
 populateFilters();render();renderTray();
-$('#searchInput').addEventListener('input',e=>{state.query=e.target.value.trim();render()});$('#clearSearch').addEventListener('click',()=>{state.query='';$('#searchInput').value='';render();$('#searchInput').focus()});$('#categorySelect').addEventListener('change',e=>{state.category=e.target.value;render()});$('#sectionSelect').addEventListener('change',e=>{state.section=e.target.value;render()});$$('.filter-chip').forEach(b=>b.addEventListener('click',()=>setStatus(b.dataset.status)));$('#resetBtn').addEventListener('click',resetAll);$('#viewBtn').addEventListener('click',()=>withTransition(()=>{state.view=state.view==='table'?'card':'table';render()}));$('#printBtn').addEventListener('click',()=>window.print());$('#closeDialog').addEventListener('click',()=>$('#detailDialog').close());$('#detailDialog').addEventListener('click',e=>{if(e.target===$('#detailDialog'))$('#detailDialog').close()});$('#cardView').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),detail=e.target.closest('[data-detail]'),copy=e.target.closest('[data-copy]');if(fav)toggleFav(fav.dataset.fav);if(detail)openDetail(detail.dataset.detail);if(copy){const x=entryById(copy.dataset.copy);copyText(x.drugs,copy)}});$('#sourceTableBody').addEventListener('click',e=>{const tr=e.target.closest('tr[data-entry-id]');if(tr)openDetail(tr.dataset.entryId)});$('#dialogDrugs').addEventListener('click',e=>{const b=e.target.closest('[data-copy-name]');if(b)copyText(b.dataset.copyName,b)});$('#trayHead').addEventListener('click',toggleTray);$('#trayHead').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleTray()}});$('#trayList').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b)toggleFav(b.dataset.remove)});$('#quickNav').addEventListener('click',e=>{const b=e.target.closest('[data-section-index]');if(!b)return;state.section=b.dataset.sectionIndex;$('#sectionSelect').value=state.section;render();document.querySelector('.data-shell').scrollIntoView({behavior:'smooth',block:'start'})});
-const savedTheme=localStorage.getItem('raynovent-theme');if(savedTheme)document.documentElement.dataset.theme=savedTheme;$('#themeBtn').addEventListener('click',()=>withTransition(()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;localStorage.setItem('raynovent-theme',next)}));$('#motionBtn').addEventListener('click',()=>{document.body.classList.toggle('motion-off');$('#motionBtn').textContent=document.body.classList.contains('motion-off')?'✧':'✦'});$('#backTop').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));window.addEventListener('scroll',()=>{const max=document.documentElement.scrollHeight-innerHeight;$('#scrollProgress').style.width=`${max?scrollY/max*100:0}%`;$('#backTop').classList.toggle('show',scrollY>700)},{passive:true});
-const io=new IntersectionObserver(es=>es.forEach(x=>{if(x.isIntersecting){x.target.classList.add('visible');io.unobserve(x.target)}}),{threshold:.1});$$('.reveal').forEach(x=>io.observe(x));$$('[data-tilt]').forEach(card=>{card.addEventListener('pointermove',e=>{if(document.body.classList.contains('motion-off'))return;const r=card.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;card.style.transform=`perspective(800px) rotateX(${-y*4}deg) rotateY(${x*5}deg) translateY(-4px)`});card.addEventListener('pointerleave',()=>card.style.transform='')});
+$('#searchInput').addEventListener('input',e=>{state.query=e.target.value.trim();render()});
+$('#clearSearch').addEventListener('click',()=>{state.query='';$('#searchInput').value='';render();$('#searchInput').focus()});
+$('#categorySelect').addEventListener('change',e=>{state.category=e.target.value;render()});
+$('#sectionSelect').addEventListener('change',e=>{state.section=e.target.value;render()});
+$$('.filter-chip').forEach(b=>b.addEventListener('click',()=>setStatus(b.dataset.status)));
+$('#resetBtn').addEventListener('click',resetAll);
+$('#viewBtn').addEventListener('click',()=>withTransition(()=>{state.view=state.view==='table'?'card':'table';render()}));
+$('#printBtn').addEventListener('click',()=>window.print());
+$('#closeDialog').addEventListener('click',()=>$('#detailDialog').close());
+$('#detailDialog').addEventListener('click',e=>{if(e.target===$('#detailDialog'))$('#detailDialog').close()});
+$('#cardView').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),detail=e.target.closest('[data-detail]'),copy=e.target.closest('[data-copy]');if(fav)toggleFav(fav.dataset.fav);if(detail)openDetail(detail.dataset.detail);if(copy){const x=entryById(copy.dataset.copy);copyText(x.drugs,copy)}});
+$('#sourceTableBody').addEventListener('click',e=>{const tr=e.target.closest('tr[data-entry-id]');if(tr)openDetail(tr.dataset.entryId)});
+$('#dialogDrugs').addEventListener('click',e=>{const b=e.target.closest('[data-copy-name]');if(b)copyText(b.dataset.copyName,b)});
+$('#trayHead').addEventListener('click',toggleTray);$('#trayHead').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleTray()}});
+$('#trayList').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b)toggleFav(b.dataset.remove)});
+$('#quickNav').addEventListener('click',e=>{const b=e.target.closest('[data-section-index]');if(!b)return;state.section=b.dataset.sectionIndex;$('#sectionSelect').value=state.section;render();document.querySelector('.data-shell').scrollIntoView({behavior:'smooth',block:'start'})});
+
+const savedTheme=storage.getItem('raynovent-theme');if(savedTheme)document.documentElement.dataset.theme=savedTheme;
+$('#themeBtn').addEventListener('click',()=>withTransition(()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;storage.setItem('raynovent-theme',next)}));
+$('#motionBtn').addEventListener('click',()=>{document.body.classList.toggle('motion-off');$('#motionBtn').textContent=document.body.classList.contains('motion-off')?'✧':'✦'});
+$('#backTop').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+window.addEventListener('scroll',()=>{const max=document.documentElement.scrollHeight-innerHeight;$('#scrollProgress').style.width=`${max?scrollY/max*100:0}%`;$('#backTop').classList.toggle('show',scrollY>700)},{passive:true});
+
+const io=new IntersectionObserver(es=>es.forEach(x=>{if(x.isIntersecting){x.target.classList.add('visible');io.unobserve(x.target)}}),{threshold:.1});$$('.reveal').forEach(x=>io.observe(x));
+$$('[data-tilt]').forEach(card=>{card.addEventListener('pointermove',e=>{if(document.body.classList.contains('motion-off'))return;const r=card.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;card.style.transform=`perspective(800px) rotateX(${-y*4}deg) rotateY(${x*5}deg) translateY(-4px)`});card.addEventListener('pointerleave',()=>card.style.transform='')});
