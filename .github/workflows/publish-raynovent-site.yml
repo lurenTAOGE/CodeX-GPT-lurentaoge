@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -40,3 +40,14 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Record successful deployment
+        uses: actions/checkout@v6
+      - name: Write deployment marker
+        run: |
+          mkdir -p .deployment
+          printf 'status=success\nurl=%s\ncommit=%s\n' "${{ steps.deployment.outputs.page_url }}" "${{ github.sha }}" > .deployment/raynovent-pages.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .deployment/raynovent-pages.txt
+          git commit -m 'Record Raynovent Pages deployment' || exit 0
+          git push
