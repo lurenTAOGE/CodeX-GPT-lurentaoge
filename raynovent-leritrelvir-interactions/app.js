@@ -8,6 +8,7 @@ const statusClass=e=>e.status;
 const statusPill=e=>`<span class="status-pill ${statusClass(e)}">${esc(e.recommendation)}</span>`;
 function highlight(text,q){const raw=String(text),needle=String(q||'').trim();if(!needle)return esc(raw);const lower=raw.toLowerCase(),n=needle.toLowerCase();let pos=0,out='',idx;while((idx=lower.indexOf(n,pos))!==-1){out+=esc(raw.slice(pos,idx))+'<mark>'+esc(raw.slice(idx,idx+needle.length))+'</mark>';pos=idx+needle.length}return out+esc(raw.slice(pos))}
 function withTransition(fn){if(document.startViewTransition&&!document.body.classList.contains('motion-off'))document.startViewTransition(fn);else fn()}
+const sourceTableHTML=$('#sourceTableBody').innerHTML;
 
 function populateFilters(){
   const cats=[...new Set(ENTRIES.map(e=>e.category))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
@@ -30,30 +31,36 @@ function renderCards(items){
   </article>`).join('');
 }
 function renderTable(items){
-  const visible=new Set(items.map(e=>e.source_table_row));
   const body=$('#sourceTableBody');
+  const sourceMode=state.query===''&&state.status==='all'&&state.category==='all'&&state.section==='all';
+  if(!sourceMode){
+    body.dataset.mode='filtered';
+    body.innerHTML=`<tr><th scope="col">药物类别</th><th scope="col">此类药物中与本品配伍禁忌的药物</th><th scope="col">临床建议判断</th></tr>`+
+      SECTIONS.map(section=>{
+        const group=items.filter(e=>e.section===section);
+        if(!group.length)return '';
+        return `<tr class="section-row"><th colspan="3" scope="colgroup">${esc(section)}</th></tr>`+
+          group.map(e=>`<tr data-entry-id="${e.id}" title="点击查看详情"><td>${esc(e.category)}</td><td>${esc(e.drugs)}</td><td>${statusPill(e)}</td></tr>`).join('');
+      }).join('');
+    return;
+  }
+  if(body.dataset.mode==='filtered')body.innerHTML=sourceTableHTML;
+  body.dataset.mode='source';
   const rows=[...body.rows];
-  // The first row is the table header. Section rows are shown only if at least one item in that section remains.
-  rows.forEach((tr,index)=>{
-    if(index===0){tr.hidden=false;return}
-    const physicalRow=index+1;
-    const sectionCell=tr.querySelector('th[colspan="3"]');
-    if(sectionCell){
-      const sectionText=sectionCell.textContent;
-      tr.hidden=!items.some(e=>e.section===sectionText);
-      return;
-    }
-    tr.hidden=!visible.has(physicalRow);
-  });
-  // Add status styling and row details hooks without altering source cell text.
+  // Keep the unfiltered source table's merged-cell mapping intact.
   ENTRIES.forEach(e=>{
     const tr=rows[e.source_table_row-1];
     if(!tr)return;
+    tr.hidden=false;
     tr.dataset.entryId=e.id;
     tr.style.cursor='pointer';
     tr.title='点击查看详情';
     const last=[...tr.cells].at(-1);
-    if(last&&!last.dataset.decorated){last.dataset.decorated='1';last.innerHTML=`<span class="status-pill ${e.status}">${esc(last.textContent)}</span>`}
+    // Decorate only a real recommendation cell. Some rows inherit it through rowspan.
+    if(last&&normalize(last.textContent)===normalize(e.recommendation)&&!last.dataset.decorated){
+      last.dataset.decorated='1';
+      last.innerHTML=`<span class="status-pill ${e.status}">${esc(last.textContent)}</span>`;
+    }
   });
 }
 function render(){
